@@ -1,4 +1,4 @@
-/* global OKAds */
+/* global VKMini */
 (() => {
   const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("game"));
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
@@ -351,10 +351,10 @@
       showOverlay("Конец игры", `Счёт: ${state.score}. ${text}`, {
         resume: false,
         restart: true,
-        continueAd: !state.continueUsed && typeof OKAds?.showReward === "function",
+        continueAd: !state.continueUsed && typeof getAds()?.showReward === "function",
       });
       syncUI();
-      void OKAds?.showInterstitial?.().catch(() => {});
+      void getAds()?.showInterstitial?.().catch(() => {});
     }
 
     function tick() {
@@ -593,6 +593,10 @@
     };
   })();
 
+  function getAds() {
+    return window.__vkAds || null;
+  }
+
   function setAdStatusUi(text, kind) {
     if (!ui.adStatus) return;
     ui.adStatus.textContent = text;
@@ -600,29 +604,37 @@
   }
 
   async function runAdAction(fn, label) {
-    if (!OKAds || typeof fn !== "function") {
-      setAdStatusUi("Реклама ОК: API не готов", "fail");
+    const ads = getAds();
+    if (!ads || typeof fn !== "function") {
+      setAdStatusUi("Реклама: bridge не готов", "fail");
       return;
     }
     setAdStatusUi(label + "…", "wait");
     try {
-      await fn.call(OKAds);
+      await fn.call(ads);
       setAdStatusUi(label + ": OK", "ok");
     } catch (e) {
-      const pe = window.__okAdLog && window.__okAdLog[0];
+      const pe = window.__vkAdLog && window.__vkAdLog[0];
       setAdStatusUi(label + ": " + (pe?.detail || e?.message || "ошибка"), "fail");
     }
   }
 
   function setupAdButtons() {
-    ui.btnAdInterstitial?.addEventListener("click", () => void runAdAction(OKAds.showInterstitial, "Межстраничная"));
-    ui.btnAdReward?.addEventListener("click", () => void runAdAction(OKAds.showReward, "Видео"));
+    ui.btnAdInterstitial?.addEventListener("click", () => {
+      void runAdAction(getAds()?.showInterstitial, "Межстраничная");
+    });
+    ui.btnAdReward?.addEventListener("click", () => {
+      void runAdAction(getAds()?.showReward, "Видео");
+    });
+    ui.btnAdBanner?.addEventListener("click", () => {
+      void runAdAction(getAds()?.showBanner, "Баннер");
+    });
   }
 
-  function waitOkAdsReady() {
-    if (!document.body.classList.contains("ok-ads-pending")) return Promise.resolve();
+  function waitVkAdsReady() {
+    if (!document.body.classList.contains("vk-ads-pending")) return Promise.resolve();
     return new Promise((resolve) => {
-      window.addEventListener("ok-ads-ready", () => resolve(), { once: true });
+      window.addEventListener("vk-ads-done", () => resolve(), { once: true });
     });
   }
 
@@ -731,11 +743,11 @@
     ui.btnResume.addEventListener("click", () => game.resume());
     ui.btnRestart.addEventListener("click", () => void beginPlay());
     ui.btnContinueAd.addEventListener("click", async () => {
-      if (!OKAds?.showReward) return;
+      if (!getAds()?.showReward) return;
       ui.btnContinueAd.disabled = true;
       ui.btnContinueAd.textContent = "Загрузка…";
       try {
-        await OKAds.showReward();
+        await getAds().showReward();
         game.state.over = false;
         game.state.paused = false;
         game.state.continueUsed = true;
@@ -781,6 +793,10 @@
     ui.btnShare.addEventListener("click", async () => {
       const best = storage.getBest();
       const text = `Мой рекорд в игре «Змей»: ${best}. Попробуешь побить?`;
+      if (typeof VKMini?.share === "function") {
+        const r = await VKMini.share(text);
+        if (r?.ok) return;
+      }
       try {
         await navigator.clipboard.writeText(text);
         alert("Скопировано в буфер обмена:\n\n" + text);
@@ -799,7 +815,7 @@
     });
     fitCanvas();
 
-    await waitOkAdsReady();
+    await waitVkAdsReady();
     game.start();
   }
 

@@ -10,9 +10,28 @@ if (existsSync(outDir)) {
 }
 await mkdir(outDir, { recursive: true });
 
-const toCopy = ["index.html", "styles.css", "game.js", "game-config.js", "ok-ads.js"];
+const toCopy = [
+  "index.html",
+  "styles.css",
+  "game.js",
+  "game-config.js",
+  "vk-bridge.js",
+  "vk-ads-entry.js",
+];
 for (const file of toCopy) {
   await cp(path.join(root, file), path.join(outDir, file));
 }
 
-console.log(`\nOK: ok-build prepared for Odnoklassniki hosting\n- ${outDir}\n`);
+const vendorDir = path.join(outDir, "vendor");
+await mkdir(vendorDir, { recursive: true });
+const bridgeCandidates = [
+  path.join(root, "vendor", "vk-bridge.min.js"),
+  path.join(root, "node_modules", "@vkontakte", "vk-bridge", "dist", "browser.min.js"),
+];
+const bridgeSrc = bridgeCandidates.find((p) => existsSync(p));
+if (!bridgeSrc) {
+  throw new Error("vk-bridge not found: run npm install @vkontakte/vk-bridge");
+}
+await cp(bridgeSrc, path.join(vendorDir, "vk-bridge.min.js"));
+
+console.log(`\nOK: ok-build prepared (VK Bridge)\n- ${outDir}\n`);

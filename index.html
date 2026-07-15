@@ -6,11 +6,12 @@
     <meta name="theme-color" content="#0b1020" />
     <title>Змей</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script src="./vendor/vk-bridge.min.js"></script>
     <script src="https://api.ok.ru/js/fapi5.js" async></script>
     <script src="./game-config.js"></script>
-    <script src="./ok-ads.js"></script>
+    <script src="./vk-ads-entry.js"></script>
   </head>
-  <body class="ok-ads-pending">
+  <body class="vk-ads-pending">
     <div class="app">
       <header class="topbar">
         <div class="brand">
@@ -75,18 +76,21 @@
           </div>
         </section>
 
-        <section class="adPanel" aria-label="Реклама Одноклассники">
+        <section class="adPanel" aria-label="Реклама VK Bridge">
           <div class="adPanel__row">
             <button type="button" class="chip chip--ad" id="btnAdInterstitial">Межстраничная</button>
             <button type="button" class="chip chip--ad" id="btnAdReward">Видео</button>
+            <button type="button" class="chip chip--ad" id="btnAdBanner">Баннер</button>
           </div>
           <div id="adLog" class="adPanel__log" aria-live="polite"></div>
         </section>
       </main>
     </div>
 
-    <div id="adStatus" class="adStatus adStatus--wait" role="status">Реклама ОК: ожидание…</div>
+    <div class="bannerSpacer" id="bannerSpacer" aria-hidden="true"></div>
+    <div id="adStatus" class="adStatus adStatus--wait" role="status">Реклама: ожидание…</div>
 
+    <script defer src="./vk-bridge.js"></script>
     <script defer src="./game.js"></script>
   </body>
 </html>
