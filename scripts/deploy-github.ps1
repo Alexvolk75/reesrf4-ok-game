@@ -20,7 +20,7 @@ if ($LASTEXITCODE -ne 0) {
   gh auth login -h github.com -p https -w
 }
 
-$repoName = "zmei-ok-game"
+$repoName = "reesrf4-ok-game"
 $owner = (gh api user -q .login)
 $remote = "https://github.com/$owner/$repoName.git"
 
@@ -30,15 +30,15 @@ if (-not (Test-Path ".git")) {
 
 gh repo view "$owner/$repoName" 2>$null
 if ($LASTEXITCODE -ne 0) {
-  gh repo create $repoName --public --source=. --remote=origin --description "OK HTML5 game (FAPI ads)"
-} elseif (-not (git remote get-url origin 2>$null)) {
-  git remote add origin $remote
+  gh repo create $repoName --public --source=. --remote=origin --description "OK HTML5 game reesrf4 (FAPI ads)"
+} else {
+  git remote set-url origin $remote
 }
 
-git add -A
+git add game-config.js game.js index.html index-vk.html ok-ads.js styles.css vk-ads-entry.js vk-bridge.js vk-hosting-config.json package.json package-lock.json scripts .github README.md .gitignore
 git diff --cached --quiet
 if ($LASTEXITCODE -ne 0) {
-  git commit -m "OK FAPI game: GitHub Pages deploy"
+  git commit -m "Deploy reesrf4: VK 54678871, OK 512004492157"
 }
 
 git push -u origin main
@@ -52,4 +52,5 @@ Write-Host ""
 Write-Host "GitHub Pages URL: $url"
 Write-Host ""
 Write-Host "Next: paste this URL in apiok.ru/dev -> your game -> Settings (Web + Mobile)"
-Write-Host "Open game: https://ok.ru/game/YOUR_OK_APP_ID"
+Write-Host "OK app ID: 512004492157"
+Write-Host "Open game: https://ok.ru/game/512004492157"

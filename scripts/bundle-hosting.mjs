@@ -12,9 +12,10 @@ if (existsSync(outDir)) {
 await mkdir(outDir, { recursive: true });
 
 // Copy only static game files (works in older WebViews, e.g. OK)
-const toCopy = ["index.html", "styles.css", "game.js", "game-config.js", "vk-bridge.js", "vk-ads-entry.js"];
+const toCopy = ["index-vk.html", "styles.css", "game.js", "game-config.js", "vk-bridge.js", "vk-ads-entry.js"];
 for (const file of toCopy) {
-  await cp(path.join(root, file), path.join(outDir, file));
+  const destName = file === "index-vk.html" ? "index.html" : file;
+  await cp(path.join(root, file), path.join(outDir, destName));
 }
 
 const vendorDir = path.join(outDir, "vendor");

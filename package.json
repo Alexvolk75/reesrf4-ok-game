@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "bundle:ok": "node ./scripts/bundle-ok.mjs",
+    "bundle:hosting": "node ./scripts/bundle-hosting.mjs",
     "deploy:github": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-github.ps1",
     "serve:local": "npm run bundle:hosting && node ./scripts/serve-local.mjs",
     "tunnel": "vk-tunnel",

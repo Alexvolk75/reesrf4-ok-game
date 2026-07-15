@@ -1,5 +1,5 @@
-// Application ID игры в Одноклассниках (из письма или apiok.ru/dev).
 window.GAME_CONFIG = {
-  okAppId: "vkapp54660972",
+  vkAppId: "54678871",
+  okAppId: "512004492157",
   gameName: "Змей",
 };
