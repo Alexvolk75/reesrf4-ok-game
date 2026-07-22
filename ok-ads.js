@@ -4,8 +4,10 @@
   var MAX_LOG = 80;
   var AD_POLICY = {
     entryInterstitialCount: 3,
-    interstitialGapMs: 900,
-    gameplayInterstitialGapMs: 1200,
+    interstitialGapMs: 2000,
+    entryInterstitialGapMs: 2000,
+    gameplayInterstitialGapMs: 2000,
+    bannerAfterInterstitialMs: 2000,
     allowVideo: false,
     bannerPosition: "bottom",
   };
@@ -339,11 +341,24 @@
   }
 
   function runEntryAds() {
-    setAdStatus("ОК · межстраничная ×" + AD_POLICY.entryInterstitialCount + " + баннер…", "wait");
-    return showInterstitialBurst(AD_POLICY.entryInterstitialCount, AD_POLICY.interstitialGapMs)
+    setAdStatus("ОК · межстраничная ×" + AD_POLICY.entryInterstitialCount + " (пауза 2с) + баннер…", "wait");
+    var bannerPrep = requestBanner().catch(function () {
+      return null;
+    });
+    return showInterstitialBurst(AD_POLICY.entryInterstitialCount, AD_POLICY.entryInterstitialGapMs)
+      .then(function () {
+        return delay(AD_POLICY.bannerAfterInterstitialMs);
+      })
+      .then(function () {
+        return bannerPrep;
+      })
       .then(function () {
         return showBanner().catch(function () {
-          return null;
+          return delay(2000).then(function () {
+            return showBanner().catch(function () {
+              return null;
+            });
+          });
         });
       })
       .then(function () {
