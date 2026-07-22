@@ -282,16 +282,9 @@
         setAdStatus("ОК · межстраничная показана", "ok");
         return r;
       })
-      .catch(function () {
-        return showReward()
-          .then(function (r) {
-            setAdStatus("ОК · видео показано", "ok");
-            return r;
-          })
-          .catch(function (e) {
-            setAdStatus("ОК · реклама недоступна: " + (e.message || e), "fail");
-            return null;
-          });
+      .catch(function (e) {
+        setAdStatus("ОК · реклама недоступна: " + (e.message || e), "fail");
+        return null;
       });
   }
 
