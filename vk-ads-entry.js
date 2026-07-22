@@ -608,9 +608,9 @@
     return { result: true, method: method, data: mainRes && mainRes.data, banner: bannerRes.data };
   }
 
-  /** Вход: видео → баннер → межстраничная */
+  /** Вход: всегда видео → всегда межстраничная → всегда баннер */
   function waterfallEntry(env) {
-    var mainRes = null;
+    var methods = [];
 
     function showVideo() {
       return tryStep(function () {
@@ -620,59 +620,77 @@
           { ad_format: "reward", use_waterfall: true },
           "VKWebAppShowNativeAdsFailed"
         );
-      }).catch(function (err) {
-        if (isOkWithoutVk(env) && canUseFapi() && isRecoverableAdFail(err)) {
-          return tryStep(fapiShowReward);
-        }
-        throw err;
-      });
+      })
+        .catch(function (err) {
+          if (isOkWithoutVk(env) && canUseFapi() && isRecoverableAdFail(err)) {
+            return tryStep(fapiShowReward);
+          }
+          return null;
+        })
+        .catch(function () {
+          return null;
+        });
     }
 
-    function showInterstitialAfter() {
-      return delay(800).then(function () {
-        return tryStep(function () {
-          return bridgeCall(
-            "interstitial",
-            "VKWebAppShowNativeAds",
-            { ad_format: "interstitial" },
-            "VKWebAppShowNativeAdsFailed"
-          );
-        }).catch(function (err) {
+    function showInterstitialOnce() {
+      return tryStep(function () {
+        return bridgeCall(
+          "interstitial",
+          "VKWebAppShowNativeAds",
+          { ad_format: "interstitial" },
+          "VKWebAppShowNativeAdsFailed"
+        );
+      })
+        .catch(function (err) {
           if (isOkWithoutVk(env) && canUseFapi() && isRecoverableAdFail(err)) {
             return tryStep(fapiShowInterstitial);
           }
-          throw err;
+          return null;
+        })
+        .catch(function () {
+          return null;
         });
-      });
+    }
+
+    /** Межстраничную дергаем несколько раз — всегда, максимально */
+    function showInterstitialMax() {
+      var count = 3;
+      var gapMs = 1500;
+      var chain = Promise.resolve(null);
+      for (var i = 0; i < count; i++) {
+        (function (idx) {
+          chain = chain.then(function (prev) {
+            var wait = idx === 0 ? Promise.resolve() : delay(gapMs);
+            return wait.then(function () {
+              return showInterstitialOnce().then(function (res) {
+                if (res && res.result) methods.push(res.method || "interstitial");
+                return res || prev;
+              });
+            });
+          });
+        })(i);
+      }
+      return chain;
     }
 
     return showVideo()
-      .catch(function () {
-        return null;
+      .then(function (videoRes) {
+        if (videoRes && videoRes.result) methods.push(videoRes.method || "reward");
+        return showInterstitialMax();
       })
-      .then(function (res) {
-        mainRes = res;
+      .then(function () {
         return tryBannerBestEffort();
       })
       .then(function (bannerRes) {
-        if (bannerRes && bannerRes.result) {
-          mainRes = attachBannerResult(mainRes || { result: true, method: "" }, bannerRes);
+        if (bannerRes && bannerRes.result) methods.push("ShowBannerAd");
+        if (!methods.length) {
+          throw { error_data: { error_code: 20 }, recoverable: true };
         }
-        return showInterstitialAfter().catch(function () {
-          return null;
-        });
-      })
-      .then(function (interRes) {
-        if (interRes && interRes.result) {
-          return {
-            result: true,
-            method: (mainRes && mainRes.method ? mainRes.method + "+" : "") + (interRes.method || "interstitial"),
-            data: interRes.data,
-            banner: mainRes && mainRes.banner,
-          };
-        }
-        if (mainRes && mainRes.result) return mainRes;
-        throw { error_data: { error_code: 20 }, recoverable: true };
+        return {
+          result: true,
+          method: methods.join("+"),
+          banner: bannerRes && bannerRes.data,
+        };
       });
   }
 
@@ -809,7 +827,7 @@
         return bridgeSilent("entry", "VKWebAppCheckNativeAds", { ad_format: "interstitial" });
       })
       .then(function () {
-        setAdStatus(envLabel(env) + " · видео → баннер → межстраничная…", "wait");
+        setAdStatus(envLabel(env) + " · видео → межстраничная → баннер…", "wait");
         return waterfallEntry(env);
       });
   }
@@ -849,7 +867,7 @@
         window.__vkAdEnv = env;
         return Promise.race([
           runEntryChain(env),
-          delay(25000).then(function () {
+          delay(120000).then(function () {
             throw { message: "entry ads timeout", recoverable: true };
           }),
         ]);
