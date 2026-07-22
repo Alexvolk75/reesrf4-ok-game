@@ -20,7 +20,7 @@
     adStatus: document.getElementById("adStatus"),
     adLog: document.getElementById("adLog"),
     btnAdInterstitial: document.getElementById("btnAdInterstitial"),
-    btnAdBanner: document.getElementById("btnAdBanner"),
+    btnAdReward: document.getElementById("btnAdReward"),
   };
 
   const GRID = 24;
@@ -351,10 +351,10 @@
       showOverlay("Конец игры", `Счёт: ${state.score}. ${text}`, {
         resume: false,
         restart: true,
-        continueAd: !state.continueUsed && typeof getAds()?.showInterstitial === "function",
+        continueAd: !state.continueUsed && typeof getAds()?.showReward === "function",
       });
       syncUI();
-      showAdsQuietly();
+      void getAds()?.showInterstitial?.().catch(() => {});
     }
 
     function tick() {
@@ -387,9 +387,6 @@
         state.justAte = 10;
         audio.beep("eat");
         placeFood();
-        if (state.score > 0 && state.score % AD_SCORE_STEP === 0) {
-          void getAds()?.showInterstitial?.().catch(() => {});
-        }
       } else {
         state.snake.shift();
       }
@@ -596,17 +593,8 @@
     };
   })();
 
-  const AD_SCORE_STEP = 5;
-
   function getAds() {
     return window.__vkAds || null;
-  }
-
-  function showAdsQuietly() {
-    const ads = getAds();
-    if (!ads) return;
-    void ads.showInterstitial?.().catch(() => {});
-    void ads.showBanner?.().catch(() => {});
   }
 
   function setAdStatusUi(text, kind) {
@@ -634,6 +622,9 @@
   function setupAdButtons() {
     ui.btnAdInterstitial?.addEventListener("click", () => {
       void runAdAction(getAds()?.showInterstitial, "Межстраничная");
+    });
+    ui.btnAdReward?.addEventListener("click", () => {
+      void runAdAction(getAds()?.showReward, "Видео");
     });
     ui.btnAdBanner?.addEventListener("click", () => {
       void runAdAction(getAds()?.showBanner, "Баннер");
@@ -752,11 +743,11 @@
     ui.btnResume.addEventListener("click", () => game.resume());
     ui.btnRestart.addEventListener("click", () => void beginPlay());
     ui.btnContinueAd.addEventListener("click", async () => {
-      if (!getAds()?.showInterstitial) return;
+      if (!getAds()?.showReward) return;
       ui.btnContinueAd.disabled = true;
       ui.btnContinueAd.textContent = "Загрузка…";
       try {
-        await getAds().showInterstitial();
+        await getAds().showReward();
         game.state.over = false;
         game.state.paused = false;
         game.state.continueUsed = true;

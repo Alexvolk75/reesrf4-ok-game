@@ -15,14 +15,6 @@
     fapi: "FAPI",
   };
 
-  var AD_POLICY = {
-    interstitialBurst: 3,
-    interstitialGapMs: 900,
-    entryInterstitialBurst: 3,
-    entryInterstitialGapMs: 700,
-    allowVideo: false,
-  };
-
   var logEntries = [];
 
   function escHtml(s) {
@@ -610,55 +602,45 @@
       });
   }
 
-  function bridgeInterstitialStep() {
-    return tryStep(function () {
-      return bridgeCall(
-        "interstitial",
-        "VKWebAppShowNativeAds",
-        { ad_format: "interstitial" },
-        "VKWebAppShowNativeAdsFailed"
-      );
-    });
-  }
-
-  function runInterstitialBurst(count, gapMs) {
-    var chain = Promise.reject({ error_data: { error_code: 20 }, recoverable: true });
-    for (var i = 0; i < count; i++) {
-      (function (idx) {
-        chain = chain.catch(function (err) {
-          if (!isRecoverableAdFail(err)) throw err;
-          var wait = idx > 0 ? delay(gapMs) : Promise.resolve();
-          return wait.then(function () {
-            return bridgeInterstitialStep();
-          });
-        });
-      })(i);
-    }
-    return chain;
-  }
-
   function attachBannerResult(mainRes, bannerRes) {
     if (!bannerRes || !bannerRes.result) return mainRes;
     var method = (mainRes && mainRes.method ? mainRes.method + "+" : "") + "ShowBannerAd";
     return { result: true, method: method, data: mainRes && mainRes.data, banner: bannerRes.data };
   }
 
-  /** Вход: несколько межстраничных + баннер (без видео). */
+  /** Вход: видео → межстраничная → баннер (баннер всегда пробуем) */
   function waterfallEntry(env) {
     var steps = [
       function () {
-        return runInterstitialBurst(AD_POLICY.entryInterstitialBurst, AD_POLICY.entryInterstitialGapMs);
+        return tryStep(function () {
+          return bridgeCall(
+            "reward",
+            "VKWebAppShowNativeAds",
+            { ad_format: "reward", use_waterfall: true },
+            "VKWebAppShowNativeAdsFailed"
+          );
+        });
+      },
+      function () {
+        return delay(800).then(function () {
+          return tryStep(function () {
+            return bridgeCall(
+              "interstitial",
+              "VKWebAppShowNativeAds",
+              { ad_format: "interstitial" },
+              "VKWebAppShowNativeAdsFailed"
+            );
+          });
+        });
       },
     ];
 
     if (isOkWithoutVk(env) && canUseFapi()) {
       steps.push(function () {
-        return tryStep(fapiShowInterstitial);
+        return tryStep(fapiShowReward);
       });
       steps.push(function () {
-        return delay(AD_POLICY.entryInterstitialGapMs).then(function () {
-          return tryStep(fapiShowInterstitial);
-        });
+        return tryStep(fapiShowInterstitial);
       });
     }
 
@@ -678,43 +660,86 @@
       });
   }
 
-  /** Только межстраничная (без видео). */
+  /** Bridge first для VK ID; FAPI только OK без VK ID и только в ok.ru iframe */
   function waterfallInterstitial(env) {
-    var steps = [
-      function () {
-        return runInterstitialBurst(AD_POLICY.interstitialBurst, AD_POLICY.interstitialGapMs);
-      },
-    ];
+    var steps = [];
 
-    if (isOkWithoutVk(env) && canUseFapi()) {
+    if (!isOkWithoutVk(env)) {
       steps.push(function () {
-        return tryStep(fapiShowInterstitial);
+        return tryStep(function () {
+          return bridgeCall("interstitial", "VKWebAppShowNativeAds", { ad_format: "interstitial" }, "VKWebAppShowNativeAdsFailed");
+        });
       });
       steps.push(function () {
-        return delay(AD_POLICY.interstitialGapMs).then(function () {
+        return delay(1500).then(function () {
+          return tryStep(function () {
+            return bridgeCall("interstitial", "VKWebAppShowNativeAds", { ad_format: "interstitial" }, "VKWebAppShowNativeAdsFailed");
+          });
+        });
+      });
+      steps.push(function () {
+        return tryStep(function () {
+          return bridgeCall("reward", "VKWebAppShowNativeAds", { ad_format: "reward", use_waterfall: true }, "VKWebAppShowNativeAdsFailed");
+        });
+      });
+    } else {
+      steps.push(function () {
+        return tryStep(function () {
+          return bridgeCall("interstitial", "VKWebAppShowNativeAds", { ad_format: "interstitial" }, "VKWebAppShowNativeAdsFailed");
+        });
+      });
+      steps.push(function () {
+        return delay(1500).then(function () {
+          return tryStep(function () {
+            return bridgeCall("interstitial", "VKWebAppShowNativeAds", { ad_format: "interstitial" }, "VKWebAppShowNativeAdsFailed");
+          });
+        });
+      });
+      if (canUseFapi()) {
+        steps.push(function () {
           return tryStep(fapiShowInterstitial);
+        });
+        steps.push(function () {
+          return tryStep(fapiShowReward);
+        });
+      }
+      steps.push(function () {
+        return tryStep(function () {
+          return bridgeCall("reward", "VKWebAppShowNativeAds", { ad_format: "reward", use_waterfall: true }, "VKWebAppShowNativeAdsFailed");
         });
       });
     }
 
-    return runWaterfallSteps(steps).then(function (mainRes) {
-      return tryBannerBestEffort().then(function (bannerRes) {
-        return attachBannerResult(mainRes, bannerRes);
-      });
+    return runWaterfallSteps(steps).then(function (r) {
+      return r;
     });
   }
 
   function waterfallReward(env) {
-    if (!AD_POLICY.allowVideo) {
-      return waterfallInterstitial(env);
+    var steps = [];
+
+    steps.push(function () {
+      return tryStep(function () {
+        return bridgeCall("reward", "VKWebAppShowNativeAds", { ad_format: "reward", use_waterfall: true }, "VKWebAppShowNativeAdsFailed");
+      });
+    });
+    steps.push(function () {
+      return tryStep(function () {
+        return bridgeCall("interstitial", "VKWebAppShowNativeAds", { ad_format: "interstitial" }, "VKWebAppShowNativeAdsFailed");
+      });
+    });
+    if (isOkWithoutVk(env) && canUseFapi()) {
+      steps.push(function () {
+        return tryStep(fapiShowReward);
+      });
+      steps.push(function () {
+        return tryStep(fapiShowInterstitial);
+      });
     }
-    return runWaterfallSteps([
-      function () {
-        return tryStep(function () {
-          return bridgeCall("reward", "VKWebAppShowNativeAds", { ad_format: "reward", use_waterfall: true }, "VKWebAppShowNativeAdsFailed");
-        });
-      },
-    ]);
+
+    return runWaterfallSteps(steps).then(function (r) {
+      return r;
+    });
   }
 
   function waterfallBanner(env) {
@@ -763,9 +788,12 @@
 
   function runEntryChain(env) {
     adLog("entry", "Init", "ok", envLabel(env));
-    return bridgeSilent("entry", "VKWebAppCheckNativeAds", { ad_format: "interstitial" })
+    return bridgeSilent("entry", "VKWebAppCheckNativeAds", { ad_format: "reward", use_waterfall: true })
       .then(function () {
-        setAdStatus(envLabel(env) + " · межстраничная ×" + AD_POLICY.entryInterstitialBurst + " → баннер…", "wait");
+        return bridgeSilent("entry", "VKWebAppCheckNativeAds", { ad_format: "interstitial" });
+      })
+      .then(function () {
+        setAdStatus(envLabel(env) + " · видео → межстраничная → баннер…", "wait");
         return waterfallEntry(env);
       });
   }
@@ -805,7 +833,7 @@
         window.__vkAdEnv = env;
         return Promise.race([
           runEntryChain(env),
-          delay(45000).then(function () {
+          delay(25000).then(function () {
             throw { message: "entry ads timeout", recoverable: true };
           }),
         ]);
