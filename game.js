@@ -1,4 +1,4 @@
-/* global VKMini */
+/* global OKAds */
 (() => {
   const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("game"));
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext("2d"));
@@ -351,10 +351,11 @@
       showOverlay("Конец игры", `Счёт: ${state.score}. ${text}`, {
         resume: false,
         restart: true,
-        continueAd: !state.continueUsed && typeof getAds()?.showInterstitial === "function",
+        continueAd: !state.continueUsed && typeof OKAds?.showInterstitial === "function",
       });
       syncUI();
-      showAdsQuietly();
+      void OKAds?.showInterstitial?.().catch(() => {});
+      void OKAds?.showBanner?.().catch(() => {});
     }
 
     function tick() {
@@ -388,7 +389,7 @@
         audio.beep("eat");
         placeFood();
         if (state.score > 0 && state.score % AD_SCORE_STEP === 0) {
-          void getAds()?.showInterstitial?.().catch(() => {});
+          void OKAds?.showInterstitial?.().catch(() => {});
         }
       } else {
         state.snake.shift();
@@ -598,17 +599,6 @@
 
   const AD_SCORE_STEP = 5;
 
-  function getAds() {
-    return window.__vkAds || null;
-  }
-
-  function showAdsQuietly() {
-    const ads = getAds();
-    if (!ads) return;
-    void ads.showInterstitial?.().catch(() => {});
-    void ads.showBanner?.().catch(() => {});
-  }
-
   function setAdStatusUi(text, kind) {
     if (!ui.adStatus) return;
     ui.adStatus.textContent = text;
@@ -616,34 +606,29 @@
   }
 
   async function runAdAction(fn, label) {
-    const ads = getAds();
-    if (!ads || typeof fn !== "function") {
-      setAdStatusUi("Реклама: bridge не готов", "fail");
+    if (!OKAds || typeof fn !== "function") {
+      setAdStatusUi("Реклама ОК: API не готов", "fail");
       return;
     }
     setAdStatusUi(label + "…", "wait");
     try {
-      await fn.call(ads);
+      await fn.call(OKAds);
       setAdStatusUi(label + ": OK", "ok");
     } catch (e) {
-      const pe = window.__vkAdLog && window.__vkAdLog[0];
+      const pe = window.__okAdLog && window.__okAdLog[0];
       setAdStatusUi(label + ": " + (pe?.detail || e?.message || "ошибка"), "fail");
     }
   }
 
   function setupAdButtons() {
-    ui.btnAdInterstitial?.addEventListener("click", () => {
-      void runAdAction(getAds()?.showInterstitial, "Межстраничная");
-    });
-    ui.btnAdBanner?.addEventListener("click", () => {
-      void runAdAction(getAds()?.showBanner, "Баннер");
-    });
+    ui.btnAdInterstitial?.addEventListener("click", () => void runAdAction(OKAds.showInterstitial, "Межстраничная"));
+    ui.btnAdBanner?.addEventListener("click", () => void runAdAction(OKAds.showBanner, "Баннер"));
   }
 
-  function waitVkAdsReady() {
-    if (!document.body.classList.contains("vk-ads-pending")) return Promise.resolve();
+  function waitOkAdsReady() {
+    if (!document.body.classList.contains("ok-ads-pending")) return Promise.resolve();
     return new Promise((resolve) => {
-      window.addEventListener("vk-ads-done", () => resolve(), { once: true });
+      window.addEventListener("ok-ads-ready", () => resolve(), { once: true });
     });
   }
 
@@ -752,11 +737,11 @@
     ui.btnResume.addEventListener("click", () => game.resume());
     ui.btnRestart.addEventListener("click", () => void beginPlay());
     ui.btnContinueAd.addEventListener("click", async () => {
-      if (!getAds()?.showInterstitial) return;
+      if (!OKAds?.showInterstitial) return;
       ui.btnContinueAd.disabled = true;
       ui.btnContinueAd.textContent = "Загрузка…";
       try {
-        await getAds().showInterstitial();
+        await OKAds.showInterstitial();
         game.state.over = false;
         game.state.paused = false;
         game.state.continueUsed = true;
@@ -824,7 +809,7 @@
     });
     fitCanvas();
 
-    await waitVkAdsReady();
+    await waitOkAdsReady();
     game.start();
   }
 

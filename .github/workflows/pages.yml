@@ -1,4 +1,4 @@
-name: Deploy VK Bridge game to GitHub Pages
+name: Deploy OK game to GitHub Pages
 
 on:
   push:

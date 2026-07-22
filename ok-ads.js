@@ -1,10 +1,20 @@
 /* global FAPI */
 (function () {
   var FAPI_URL = "https://api.ok.ru/js/fapi5.js";
-  var MAX_LOG = 60;
+  var MAX_LOG = 80;
+  var AD_POLICY = {
+    entryInterstitialCount: 3,
+    interstitialGapMs: 900,
+    gameplayInterstitialGapMs: 1200,
+    allowVideo: false,
+    bannerPosition: "bottom",
+  };
+
   var logEntries = [];
   var initPromise = null;
   var inited = false;
+  var bannerRequested = false;
+  var bannerLoaded = false;
 
   function escHtml(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -17,6 +27,12 @@
         return String(n).padStart(2, "0");
       })
       .join(":");
+  }
+
+  function delay(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
   }
 
   function adLog(method, status, detail) {
@@ -52,6 +68,11 @@
     if (!el) return;
     el.textContent = text;
     el.className = "adStatus adStatus--" + (kind || "wait");
+  }
+
+  function setBannerSpacer(heightPx) {
+    var sp = document.getElementById("bannerSpacer");
+    if (sp) sp.style.height = heightPx ? heightPx + "px" : "0px";
   }
 
   function readQuery() {
@@ -105,7 +126,12 @@
     });
   }
 
-  function waitUi(method, timeoutMs) {
+  function waitUi(method, timeoutMs, okDataList) {
+    var okSet = {};
+    (okDataList || ["ad_shown"]).forEach(function (d) {
+      okSet[d] = true;
+    });
+
     return new Promise(function (resolve, reject) {
       if (typeof FAPI === "undefined" || !FAPI.UI) {
         reject(new Error("no_fapi"));
@@ -133,7 +159,7 @@
           if (n > 0) queueSize = n;
           return;
         }
-        if (result === "ok" && data === "ad_shown") {
+        if (result === "ok" && okSet[data]) {
           shown++;
           if (shown >= queueSize) {
             clearTimeout(timer);
@@ -149,6 +175,29 @@
         }
       };
     });
+  }
+
+  function invokeUi(method, args, waitMethod, okDataList, timeoutMs) {
+    if (typeof FAPI === "undefined" || !FAPI.invokeUIMethod) {
+      return Promise.reject(new Error("no_invoke_ui"));
+    }
+    adLog(method, "start", args ? args.join(",") : "");
+    var wait = waitUi(waitMethod || method, timeoutMs, okDataList);
+    try {
+      if (args && args.length) FAPI.invokeUIMethod.apply(FAPI, [method].concat(args));
+      else FAPI.invokeUIMethod(method);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    return wait
+      .then(function (d) {
+        adLog(method, "ok", d.data || "ok");
+        return d;
+      })
+      .catch(function (e) {
+        adLog(method, "fail", e.message || String(e));
+        throw e;
+      });
   }
 
   function ensureFapi() {
@@ -195,12 +244,11 @@
     return initPromise;
   }
 
-  function showInterstitial() {
+  function showInterstitialOnce() {
     if (!isOkFrame()) {
       adLog("showAd", "fail", "не iframe ОК");
       return Promise.reject(new Error("not_ok_frame"));
     }
-    adLog("showAd", "start", "");
     return ensureFapi().then(function () {
       if (!inited || !FAPI.UI.showAd) throw new Error("fapi_not_ready");
       var wait = waitUi("showAd");
@@ -215,72 +263,91 @@
     });
   }
 
-  function showReward() {
+  function showInterstitialBurst(count, gapMs) {
+    var chain = Promise.resolve(null);
+    for (var i = 0; i < count; i++) {
+      (function (idx) {
+        chain = chain
+          .then(function () {
+            return showInterstitialOnce().catch(function () {
+              return null;
+            });
+          })
+          .then(function (res) {
+            if (idx < count - 1) {
+              return delay(gapMs).then(function () {
+                return res;
+              });
+            }
+            return res;
+          });
+      })(i);
+    }
+    return chain;
+  }
+
+  function showInterstitial() {
+    return showInterstitialBurst(3, AD_POLICY.gameplayInterstitialGapMs);
+  }
+
+  function requestBanner() {
     if (!isOkFrame()) {
-      adLog("showLoadedAd", "fail", "не iframe ОК");
       return Promise.reject(new Error("not_ok_frame"));
     }
+    if (bannerRequested && bannerLoaded) return Promise.resolve({ ok: true, cached: true });
     return ensureFapi().then(function () {
-      if (!inited || !FAPI.UI.loadAd) throw new Error("fapi_not_ready");
-      return new Promise(function (resolve, reject) {
-        var prev = window.API_callback;
-        var timer = setTimeout(function () {
-          window.API_callback = prev;
-          reject(new Error("fapi_timeout"));
-        }, 90000);
-
-        window.API_callback = function (m, result, data) {
-          if (m === "loadAd") {
-            if (result === "ok" && data === "ready") {
-              adLog("loadAd", "ok", "ready");
-              try {
-                FAPI.UI.showLoadedAd();
-              } catch (e) {
-                clearTimeout(timer);
-                window.API_callback = prev;
-                reject(e);
-              }
-            } else if (result === "error") {
-              clearTimeout(timer);
-              window.API_callback = prev;
-              adLog("loadAd", "fail", data || "?");
-              reject(new Error(data || "load_failed"));
-            }
-            return;
-          }
-          if (m === "showLoadedAd") {
-            if (result === "ok" && data === "ad_shown") {
-              clearTimeout(timer);
-              window.API_callback = prev;
-              adLog("showLoadedAd", "ok", "ad_shown");
-              resolve({ ok: true, method: "showLoadedAd", data: data });
-            } else if (result === "error") {
-              clearTimeout(timer);
-              window.API_callback = prev;
-              adLog("showLoadedAd", "fail", data || "?");
-              reject(new Error(data || "show_failed"));
-            }
-          }
-        };
-
-        adLog("loadAd", "start", "");
-        try {
-          FAPI.UI.loadAd();
-        } catch (e) {
-          clearTimeout(timer);
-          window.API_callback = prev;
-          reject(e);
-        }
-      });
+      if (!inited) throw new Error("fapi_not_ready");
+      bannerRequested = true;
+      return invokeUi("requestBannerAds", [], "requestBannerAds", ["ad_loaded", "ad_shown", "banner_shown"], 60000)
+        .then(function () {
+          bannerLoaded = true;
+          return { ok: true };
+        })
+        .catch(function (e) {
+          bannerRequested = false;
+          throw e;
+        });
     });
   }
 
+  function showBanner() {
+    if (!isOkFrame()) {
+      adLog("showBannerAds", "fail", "не iframe ОК");
+      return Promise.reject(new Error("not_ok_frame"));
+    }
+    return ensureFapi()
+      .then(function () {
+        if (!bannerLoaded) return requestBanner();
+      })
+      .then(function () {
+        return invokeUi(
+          "showBannerAds",
+          [AD_POLICY.bannerPosition],
+          "showBannerAds",
+          ["true"],
+          30000
+        );
+      })
+      .then(function (d) {
+        setBannerSpacer(96);
+        return { ok: true, method: "showBannerAds", data: d };
+      })
+      .catch(function (e) {
+        adLog("showBannerAds", "fail", e.message || String(e));
+        throw e;
+      });
+  }
+
   function runEntryAds() {
-    setAdStatus("ОК · загрузка рекламы…", "wait");
-    return showInterstitial()
-      .then(function (r) {
-        setAdStatus("ОК · межстраничная показана", "ok");
-        return r;
+    setAdStatus("ОК · межстраничная ×" + AD_POLICY.entryInterstitialCount + " + баннер…", "wait");
+    return showInterstitialBurst(AD_POLICY.entryInterstitialCount, AD_POLICY.interstitialGapMs)
+      .then(function () {
+        return showBanner().catch(function () {
+          return null;
+        });
+      })
+      .then(function () {
+        setAdStatus("ОК · реклама загружена (FAPI)", "ok");
       })
       .catch(function (e) {
         setAdStatus("ОК · реклама недоступна: " + (e.message || e), "fail");
@@ -295,7 +362,8 @@
     },
     isOkFrame: isOkFrame,
     showInterstitial: showInterstitial,
-    showReward: showReward,
+    showBanner: showBanner,
+    requestBanner: requestBanner,
   };
 
   renderLog();
